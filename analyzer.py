@@ -10,7 +10,6 @@ import cv2
 
 import config
 from detector import Detector
-from iou_utils import best_iou
 
 
 class ViolationAnalyzer:
@@ -40,15 +39,11 @@ class ViolationAnalyzer:
 
         for idx, img_path in enumerate(images, start=1):
             dets = self.detector.detect(str(img_path))
-            persons = dets["persons"]
-            helmets = dets["helmets"]
+            without_helmets = dets["without_helmets"]
 
-            # 对每个工人检查是否存在重叠度足够高的安全帽
-            for person_box in persons:
-                iou = best_iou(person_box, helmets)
-                if iou < config.IOU_THRESHOLD:
-                    record = self._record(idx, img_path, person_box, iou)
-                    violations.append(record)
+            for person_box in without_helmets:
+                record = self._record(idx, img_path, person_box)
+                violations.append(record)
 
         if violations:
             self._write_log(violations)
@@ -58,25 +53,22 @@ class ViolationAnalyzer:
     # ── 内部方法 ───────────────────────────────────────
 
     def _record(self, frame_idx: int, img_path: Path,
-                person_box: list[float], iou: float) -> dict:
+                person_box: list[float]) -> dict:
         """保存违规帧并生成记录。"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         saved_name = f"violation_frame{frame_idx:04d}_{img_path.stem}.jpg"
         saved_path = self.output_dir / saved_name
         shutil.copy2(img_path, saved_path)
 
-        # 在保存的图片上画框标注
         self._annotate(saved_path, person_box)
 
         record = {
             "frame_index": frame_idx,
             "source_file": img_path.name,
             "timestamp": timestamp,
-            "iou": round(iou, 4),
             "saved_path": str(saved_path),
         }
-        print(f"  [违规] 帧 {frame_idx} | IoU={iou:.4f} | "
-              f"已保存 → {saved_name}")
+        print(f"  [违规] 帧 {frame_idx} | 已保存 → {saved_name}")
         return record
 
     @staticmethod
@@ -103,7 +95,6 @@ class ViolationAnalyzer:
                     f"帧序号: {v['frame_index']}\n"
                     f"源文件: {v['source_file']}\n"
                     f"检测时间: {v['timestamp']}\n"
-                    f"IoU值: {v['iou']}\n"
                     f"保存路径: {v['saved_path']}\n"
                     f"{'-' * 40}\n"
                 )
